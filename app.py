@@ -87,11 +87,8 @@ def get_user_data():
             # Assignment groups és priorities frissítése és tárolása
             load_and_store_options(headers)
 
-            # Válasz visszaadása a `username_user_token` és `username_user_sys_id` alapján
-            return jsonify({
-                f"{username}_user_token": access_token,
-                f"{username}_user_sys_id": caller_id
-            }), 200
+            # Sikeres hitelesítés üzenet visszaadása
+            return jsonify({"message": "Sikeres hitelesítés"}), 200
         else:
             return jsonify({"error": "Felhasználói azonosító lekérése sikertelen."}), 400
     else:
