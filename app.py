@@ -4,6 +4,7 @@ import requests
 import ibm_boto3
 from ibm_botocore.client import Config, ClientError
 import json
+import time
 
 app = Flask(__name__)
 CORS(app)
@@ -49,7 +50,7 @@ def load_and_store_options(headers):
     except ClientError as e:
         print(f"Error storing options in COS: {e}")
 
-# Bejelentkezési és user-specifikus adatok (token, caller_id) mentése
+# 1. Bejelentkezési és user-specifikus adatok (token, caller_id) mentése
 @app.route('/login', methods=['POST'])
 def login_and_store_data():
     request_data = request.json
@@ -68,9 +69,14 @@ def login_and_store_data():
     response = requests.post('https://dev227667.service-now.com/oauth_token.do', data=auth_data)
     if response.status_code == 200:
         access_token = response.json().get('access_token')
-        cos.put_object(Bucket=bucket_name, Key=f'{username}_user_token', Body=access_token)
+        
+        # Egyedi session_id létrehozása (például timestamp és felhasználónév alapján)
+        session_id = f"{username}_{int(time.time())}"
+        
+        # Token és sys_id mentése COS-ba session_id alapján
+        cos.put_object(Bucket=bucket_name, Key=f'{session_id}_user_token', Body=access_token)
 
-        # Felhasználói sys_id lekérése és mentése COS-ba user_sys_id néven
+        # Felhasználói sys_id lekérése és mentése COS-ba
         headers = {'Authorization': f'Bearer {access_token}', 'Content-Type': 'application/json'}
         response_user = requests.get(
             f"https://dev227667.service-now.com/api/now/table/sys_user?sysparm_query=user_name={username}",
@@ -78,16 +84,33 @@ def login_and_store_data():
         )
         if response_user.status_code == 200:
             caller_id = response_user.json().get('result', [])[0].get("sys_id")
-            cos.put_object(Bucket=bucket_name, Key=f'{username}_user_sys_id', Body=caller_id)
+            cos.put_object(Bucket=bucket_name, Key=f'{session_id}_user_sys_id', Body=caller_id)
 
             # Assignment groups és priorities frissítése és tárolása minden bejelentkezéskor
             load_and_store_options(headers)
 
-            return jsonify({"message": "Bejelentkezés sikeres, adatok tárolva.", "user_token": access_token, "user_sys_id": caller_id}), 200
+            return jsonify({
+                "message": "Bejelentkezés sikeres, adatok tárolva.",
+                "session_id": session_id
+            }), 200
         else:
             return jsonify({"error": "Felhasználói azonosító lekérése sikertelen."}), 400
     else:
         return jsonify({"error": "Authentication failed", "details": response.text}), 400
+
+# 2. Token és sys_id lekérése session_id alapján
+@app.route('/retrieve_data', methods=['POST'])
+def retrieve_data():
+    request_data = request.json
+    session_id = request_data.get('session_id')
+    
+    # Adatok lekérése IBM COS-ból session_id alapján
+    try:
+        user_token = cos.get_object(Bucket=bucket_name, Key=f'{session_id}_user_token')['Body'].read().decode('utf-8')
+        user_sys_id = cos.get_object(Bucket=bucket_name, Key=f'{session_id}_user_sys_id')['Body'].read().decode('utf-8')
+        return jsonify({"user_token": user_token, "user_sys_id": user_sys_id}), 200
+    except ClientError as e:
+        return jsonify({"error": f"Failed to retrieve data for session_id {session_id}"}), 400
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
