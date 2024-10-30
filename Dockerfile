@@ -14,10 +14,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Flask app beállítása (ha szükséges)
-# ENV FLASK_APP=appassigne.py  
+# ENV FLASK_APP=token.py  
 
 # Indítsd el a Flask alkalmazást
-CMD ["python", "appassigne.py"]
+CMD ["python", "token.py"]
 
 # Port megnyitása
 EXPOSE 5000
+
